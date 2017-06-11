@@ -1,0 +1,35 @@
+// Definitions for pcm5102a-hifi
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "allwinner,sun50i-h5";
+
+	fragment@0 {
+		target = <&i2c1>;
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@1 {
+		target-path = "/";
+		__overlay__ {
+			pcm5102a: pcm5102a-codec {
+				#sound-dai-cells = <0>;
+				compatible = "ti,pcm5102a";
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@2 {
+		target = <&i2s0>;
+		__overlay__ {
+			compatible = "allwinner,sun8i-h5-i2s";
+			sound-dai = <&pcm5102a>;
+			status = "okay";
+		};
+	};
+
+};

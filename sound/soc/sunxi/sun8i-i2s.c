@@ -708,7 +708,7 @@ static int sun8i_i2s_controls_set(struct snd_kcontrol *kcontrol,
 	unsigned int shift = *((unsigned int*)&mc->shift);
 	unsigned int max = *((unsigned int*)&mc->max);
 
-	if (value >= max)
+	if (value > max)
 		return -EINVAL;
 
 	regmap_update_bits(priv->regmap, mc->reg,

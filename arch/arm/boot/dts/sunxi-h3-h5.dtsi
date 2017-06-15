@@ -383,6 +383,11 @@
 				drive-strength = <40>;
 			};
 
+			i2s0_pins: i2s0 {
+				pins = "PA18", "PA19", "PA20", "PA21";
+				function = "i2s0";
+			};
+
 			i2c0_pins: i2c0 {
 				pins = "PA11", "PA12";
 				function = "i2c0";
@@ -577,6 +582,23 @@
 			dma-names = "rx", "tx";
 			allwinner,codec-analog-controls = <&codec_analog>;
 			status = "disabled";
+		};
+
+		i2s0: i2s@01c22000 {
+			#sound-dai-cells = <0>;
+			compatible = "allwinner,sun8i-h3-i2s";
+			reg = <0x01c22000 0x400>;
+			interrupts = <GIC_SPI 13 IRQ_TYPE_LEVEL_HIGH>; /* 45-32=13, P207 */
+			clocks = <&ccu CLK_BUS_I2S0>, <&ccu CLK_I2S0>;
+			clock-names = "apb", "mod";
+			resets = <&ccu RST_BUS_I2S0>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&i2s0_pins>;
+			dmas = <&dma 3>, <&dma 3>;
+			dma-names = "rx", "tx";
+			status = "disabled";
+			#address-cells = <1>;
+			#size-cells = <0>;
 		};
 
 		uart0: serial@01c28000 {

@@ -1,4 +1,4 @@
-* Allwinner A10 I2S controller
+* Allwinner A10/A38T/H3/H5 I2S controller
 
 The I2S bus (Inter-IC sound bus) is a serial link for digital
 audio data transfer between devices in the system.
@@ -8,23 +8,36 @@ Required properties:
 - compatible: should be one of the following:
    - "allwinner,sun4i-a10-i2s"
    - "allwinner,sun6i-a31-i2s"
+   - "allwinner,sun8i-a83t-i2s"
+   - "allwinner,sun8i-h3-i2s"
+   - "allwinner,sun8i-h5-i2s"
 - reg: physical base address of the controller and length of memory mapped
   region.
 - interrupts: should contain the I2S interrupt.
 - dmas: DMA specifiers for tx and rx dma. See the DMA client binding,
 	Documentation/devicetree/bindings/dma/dma.txt
-- dma-names: should include "tx" and "rx".
+- dma-names: should include "tx" and/or "rx".
 - clocks: a list of phandle + clock-specifer pairs, one for each entry in clock-names.
 - clock-names: should contain the following:
    - "apb" : clock for the I2S bus interface
    - "mod" : module clock for the I2S controller
 - #sound-dai-cells : Must be equal to 0
+- sound-dai: phandle to the codec dai
 
 Required properties for the following compatibles:
 	- "allwinner,sun6i-a31-i2s"
 - resets: phandle to the reset line for this codec
 
-Example:
+Optional properties:
+
+- interrupts: I2S interrupt
+- resets: phandle to the reset of the device
+
+Required nodes:
+
+ - port: link to the associated CODEC (DAC, HDMI...)
+
+Example 1:
 
 i2s0: i2s@01c22400 {
 	#sound-dai-cells = <0>;
@@ -36,4 +49,22 @@ i2s0: i2s@01c22400 {
 	dmas = <&dma SUN4I_DMA_NORMAL 3>,
 	       <&dma SUN4I_DMA_NORMAL 3>;
 	dma-names = "rx", "tx";
+};
+
+Example 2:
+
+i2s2: i2s at 1c22800 {
+	compatible = "allwinner,sun8i-a83t-i2s";
+	reg = <0x01c22800 0x60>;
+	clocks = <&ccu CLK_BUS_I2S2>, <&ccu CLK_I2S2>;
+	clock-names = "apb", "mod";
+	resets = <&ccu RST_I2S2>;
+	dmas = <&dma 27>;
+	dma-names = "tx";
+	status = "disabled";
+	port {
+		i2s2_hdmi: endpoint {
+			remote-endpoint = <&hdmi_i2s2>;
+		};
+	};
 };

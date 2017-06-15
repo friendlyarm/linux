@@ -108,6 +108,12 @@
 		};
 	};
 
+	pcm5102a: pcm5102a-codec {
+		#sound-dai-cells = <0>;
+		compatible = "ti,pcm5102a";
+		status = "okay";
+	};
+
 	reg_usb0_vbus: usb0-vbus {
 		compatible = "regulator-fixed";
 		regulator-name = "usb0-vbus";
@@ -350,7 +356,8 @@
 
 &i2s0 {
 	compatible = "allwinner,sun8i-h5-i2s";
-	status = "disabled";
+	sound-dai = <&pcm5102a>;
+	status = "okay";
 };
 
 &i2c0 {
@@ -362,7 +369,8 @@
 };
 
 &i2c1 {
-    status = "okay";
+    /* no I2C1 for I2S0 */
+    status = "disabled";
 };
 
 &i2c2 {

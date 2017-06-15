@@ -1087,7 +1087,7 @@ static int sun8i_i2s_dev_probe(struct platform_device *pdev)
 			return ret;
 	}
 
-	priv->playback_dma_data.maxburst = (priv->type == SOC_H3 ? 4 : 8);
+	priv->playback_dma_data.maxburst = 8;
 	priv->playback_dma_data.addr = res->start + I2S_TXFIFO;
 	priv->playback_dma_data.addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES;
 

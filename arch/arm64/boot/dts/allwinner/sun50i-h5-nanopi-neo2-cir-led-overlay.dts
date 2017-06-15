@@ -8,7 +8,7 @@
 	fragment@0 {
 		target = <&pio>;
 		__overlay__ {
-			cir_led_pin: ir {
+			cir_led_pin: ir@0 {
 				pins = "PA6";
 				function = "gpio_out";
 			};

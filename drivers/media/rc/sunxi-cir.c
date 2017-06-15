@@ -27,8 +27,9 @@
 #include <media/rc-core.h>
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
-#include <linux/delay.h>
 #include <linux/pinctrl/consumer.h>
+#include <linux/notifier.h>
+#include <linux/reboot.h>
 
 #define SUNXI_IR_DEV "sunxi-ir"
 
@@ -104,16 +105,46 @@ struct sunxi_ir {
 	struct pinctrl_state *pstate_led;
 	int gpio_led;
 	struct timer_list timer_led;
+	int timer_paused;
 };
+
+static struct sunxi_ir *pIR = NULL;
 
 static void sunxi_ir_led_timer(unsigned long arg)
 {
 	struct sunxi_ir *ir = (struct sunxi_ir *)arg;
+	int flag;
+
 	if (!IS_ERR(ir->pctl) && !IS_ERR(ir->pstate_led)) {
-		pinctrl_select_state(ir->pctl, ir->pstate_led);
-		gpio_direction_output(ir->gpio_led, 0);
+		spin_lock(&ir->ir_lock);
+		flag = ir->timer_paused;
+		spin_unlock(&ir->ir_lock);
+		if (flag == 0)
+			gpio_direction_output(ir->gpio_led, 0);
 	}
 }
+
+static int sunxi_ir_reboot_handler(struct notifier_block *this,
+				   unsigned long         code,
+				   void                  *unused)
+{
+	if (pIR) {
+		if (code == SYS_POWER_OFF || code == SYS_HALT) {
+			spin_lock(&pIR->ir_lock);
+			pIR->timer_paused = 1;
+			spin_unlock(&pIR->ir_lock);
+			gpio_direction_output(pIR->gpio_led, 1);
+			pIR = NULL;
+		}
+	}
+	return NOTIFY_OK;
+}
+
+static struct notifier_block sunxi_ir_reboot_notifier = {
+	.notifier_call	= sunxi_ir_reboot_handler,
+	.next		= NULL,
+	.priority	= 0
+};
 
 static irqreturn_t sunxi_ir_irq(int irqno, void *dev_id)
 {
@@ -152,12 +183,12 @@ static irqreturn_t sunxi_ir_irq(int irqno, void *dev_id)
 		ir_raw_event_handle(ir->rc);
 	}
 
-	spin_unlock(&ir->ir_lock);
-
-	if (rc > 0 && !IS_ERR(ir->pctl) && !IS_ERR(ir->pstate_led)) {
+	if (rc > 0 && !IS_ERR(ir->pctl) && !IS_ERR(ir->pstate_led) && ir->timer_paused == 0) {
 		gpio_direction_output(ir->gpio_led, 1);
 		mod_timer(&ir->timer_led, jiffies + HZ / 10);
 	}
+
+	spin_unlock(&ir->ir_lock);
 
 	return IRQ_HANDLED;
 }
@@ -188,7 +219,7 @@ static int sunxi_ir_probe(struct platform_device *pdev)
 
 			ret = devm_gpio_request(dev, ir->gpio_led, "sunxi-cir-led");
 			if (ret) {
-				dev_err(dev, "Failed requesing sunxi-cir-led gpio\n");
+				dev_err(dev, "Failed requesting sunxi-cir-led gpio\n");
 				return ret;
 			}
 		}
@@ -297,6 +328,22 @@ static int sunxi_ir_probe(struct platform_device *pdev)
 		goto exit_free_dev;
 	}
 
+	if (!IS_ERR(ir->pctl) && !IS_ERR(ir->pstate_led)) {
+		pinctrl_select_state(ir->pctl, ir->pstate_led);
+		gpio_direction_output(ir->gpio_led, 1);
+
+		init_timer(&ir->timer_led);
+		ir->timer_led.function = sunxi_ir_led_timer;
+		ir->timer_led.data = (unsigned long)ir;
+		ir->timer_led.expires = jiffies + HZ / 10;
+		add_timer(&ir->timer_led);
+
+		if (pIR == NULL) {
+			pIR = ir;
+			register_reboot_notifier(&sunxi_ir_reboot_notifier);
+		}
+	}
+
 	/* Enable CIR Mode */
 	writel(REG_CTL_MD, ir->base+SUNXI_IR_CTL_REG);
 
@@ -321,18 +368,6 @@ static int sunxi_ir_probe(struct platform_device *pdev)
 	/* Enable IR Module */
 	tmp = readl(ir->base + SUNXI_IR_CTL_REG);
 	writel(tmp | REG_CTL_GEN | REG_CTL_RXEN, ir->base + SUNXI_IR_CTL_REG);
-
-	if (!IS_ERR(ir->pctl) && !IS_ERR(ir->pstate_led)) {
-		pinctrl_select_state(ir->pctl, ir->pstate_led);
-		gpio_direction_output(ir->gpio_led, 1);
-
-		init_timer(&ir->timer_led);
-		ir->timer_led.function = sunxi_ir_led_timer;
-		ir->timer_led.data = (unsigned long)ir;
-		ir->timer_led.expires = jiffies + HZ / 10;
-
-		add_timer(&ir->timer_led);
-	}
 
 	dev_info(dev, "initialized sunXi IR driver\n");
 	return 0;
@@ -371,9 +406,8 @@ static int sunxi_ir_remove(struct platform_device *pdev)
 
 	if (!IS_ERR(ir->pctl) && !IS_ERR(ir->pstate_led)) {
 		del_timer(&ir->timer_led);
-
-		pinctrl_select_state(ir->pctl, ir->pstate_led);
-		gpio_direction_output(ir->gpio_led, 1);
+		if (pIR == ir)
+			unregister_reboot_notifier(&sunxi_ir_reboot_notifier);
 	}
 
 	rc_unregister_device(ir->rc);

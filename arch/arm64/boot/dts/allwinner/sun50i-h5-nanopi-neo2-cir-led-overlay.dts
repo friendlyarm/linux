@@ -1,0 +1,27 @@
+// Definitions for sunxi-cir-led
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "allwinner,sun50i-h5";
+
+	fragment@0 {
+		target = <&pio>;
+		__overlay__ {
+			cir_led_pin: ir {
+				pins = "PA6";
+				function = "gpio_out";
+			};
+		};
+	};
+
+	fragment@1 {
+		target-path = <&ir>;
+		__overlay__ {
+			pinctrl-names = "default", "cir-led";
+			pinctrl-0 = <&ir_pins_a>;
+			pinctrl-1 = <&cir_led_pin>;
+			cir-led-gpio = <&pio 0 6 GPIO_ACTIVE_LOW>; /* PA6 */
+		};
+	};
+};

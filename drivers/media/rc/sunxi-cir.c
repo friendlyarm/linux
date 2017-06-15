@@ -25,6 +25,10 @@
 #include <linux/of_platform.h>
 #include <linux/reset.h>
 #include <media/rc-core.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
+#include <linux/delay.h>
+#include <linux/pinctrl/consumer.h>
 
 #define SUNXI_IR_DEV "sunxi-ir"
 
@@ -95,13 +99,27 @@ struct sunxi_ir {
 	struct clk      *apb_clk;
 	struct reset_control *rst;
 	const char      *map_name;
+
+	struct pinctrl *pctl;
+	struct pinctrl_state *pstate_led;
+	int gpio_led;
+	struct timer_list timer_led;
 };
+
+static void sunxi_ir_led_timer(unsigned long arg)
+{
+	struct sunxi_ir *ir = (struct sunxi_ir *)arg;
+	if (!IS_ERR(ir->pctl) && !IS_ERR(ir->pstate_led)) {
+		pinctrl_select_state(ir->pctl, ir->pstate_led);
+		gpio_direction_output(ir->gpio_led, 0);
+	}
+}
 
 static irqreturn_t sunxi_ir_irq(int irqno, void *dev_id)
 {
 	unsigned long status;
 	unsigned char dt;
-	unsigned int cnt, rc;
+	unsigned int cnt, rc = 0;
 	struct sunxi_ir *ir = dev_id;
 	DEFINE_IR_RAW_EVENT(rawir);
 
@@ -136,6 +154,11 @@ static irqreturn_t sunxi_ir_irq(int irqno, void *dev_id)
 
 	spin_unlock(&ir->ir_lock);
 
+	if (rc > 0 && !IS_ERR(ir->pctl) && !IS_ERR(ir->pstate_led)) {
+		gpio_direction_output(ir->gpio_led, 1);
+		mod_timer(&ir->timer_led, jiffies + HZ / 10);
+	}
+
 	return IRQ_HANDLED;
 }
 
@@ -152,6 +175,24 @@ static int sunxi_ir_probe(struct platform_device *pdev)
 	ir = devm_kzalloc(dev, sizeof(struct sunxi_ir), GFP_KERNEL);
 	if (!ir)
 		return -ENOMEM;
+
+	ir->pctl = devm_pinctrl_get(dev);
+	if (!IS_ERR(ir->pctl)) {
+		ir->pstate_led = pinctrl_lookup_state(ir->pctl, "cir-led");
+		if (!IS_ERR(ir->pstate_led)) {
+			ir->gpio_led = of_get_named_gpio(dev->of_node, "cir-led-gpio", 0);
+			if (ir->gpio_led < 0) {
+				dev_err(dev, "Can't find cir-led gpio\n");
+				return ir->gpio_led;
+			}
+
+			ret = devm_gpio_request(dev, ir->gpio_led, "sunxi-cir-led");
+			if (ret) {
+				dev_err(dev, "Failed requesing sunxi-cir-led gpio\n");
+				return ret;
+			}
+		}
+	}
 
 	spin_lock_init(&ir->ir_lock);
 
@@ -281,6 +322,18 @@ static int sunxi_ir_probe(struct platform_device *pdev)
 	tmp = readl(ir->base + SUNXI_IR_CTL_REG);
 	writel(tmp | REG_CTL_GEN | REG_CTL_RXEN, ir->base + SUNXI_IR_CTL_REG);
 
+	if (!IS_ERR(ir->pctl) && !IS_ERR(ir->pstate_led)) {
+		pinctrl_select_state(ir->pctl, ir->pstate_led);
+		gpio_direction_output(ir->gpio_led, 1);
+
+		init_timer(&ir->timer_led);
+		ir->timer_led.function = sunxi_ir_led_timer;
+		ir->timer_led.data = (unsigned long)ir;
+		ir->timer_led.expires = jiffies + HZ / 10;
+
+		add_timer(&ir->timer_led);
+	}
+
 	dev_info(dev, "initialized sunXi IR driver\n");
 	return 0;
 
@@ -316,7 +369,15 @@ static int sunxi_ir_remove(struct platform_device *pdev)
 	writel(0, ir->base + SUNXI_IR_CTL_REG);
 	spin_unlock_irqrestore(&ir->ir_lock, flags);
 
+	if (!IS_ERR(ir->pctl) && !IS_ERR(ir->pstate_led)) {
+		del_timer(&ir->timer_led);
+
+		pinctrl_select_state(ir->pctl, ir->pstate_led);
+		gpio_direction_output(ir->gpio_led, 1);
+	}
+
 	rc_unregister_device(ir->rc);
+
 	return 0;
 }
 

@@ -204,7 +204,7 @@ struct sun4i_i2s_clk_div {
 };
 
 static const struct sun4i_i2s_clk_div sun4i_i2s_bclk_div[] = {
-	{ .div = 2, .val = 0 },
+	{ .div = 2, .val = 0 },  // +2
 	{ .div = 4, .val = 1 },
 	{ .div = 6, .val = 2 },
 	{ .div = 8, .val = 3 },
@@ -214,7 +214,7 @@ static const struct sun4i_i2s_clk_div sun4i_i2s_bclk_div[] = {
 };
 
 static const struct sun4i_i2s_clk_div sun4i_i2s_mclk_div[] = {
-	{ .div = 1, .val = 0 },
+	{ .div = 1, .val = 0 },  // +1
 	{ .div = 2, .val = 1 },
 	{ .div = 4, .val = 2 },
 	{ .div = 6, .val = 3 },
@@ -229,7 +229,8 @@ static int sun4i_i2s_get_bclk_div(struct sun4i_i2s *i2s,
 				  unsigned int oversample_rate,
 				  unsigned int word_size)
 {
-	int div = oversample_rate / word_size / 2;
+  // int div = oversample_rate / word_size / 2;
+	int div = oversample_rate / word_size;
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(sun4i_i2s_bclk_div); i++) {
@@ -338,7 +339,7 @@ static int sun4i_i2s_set_clk_rate(struct sun4i_i2s *i2s,
 	if (i2s->variant->has_fmt_set_lrck_period)
 		regmap_update_bits(i2s->regmap, SUN4I_I2S_FMT0_REG,
 				   SUN8I_I2S_FMT0_LRCK_PERIOD_MASK,
-				   SUN8I_I2S_FMT0_LRCK_PERIOD(32));
+				   SUN8I_I2S_FMT0_LRCK_PERIOD(word_size));
 
 	/* Set sign extension to pad out LSB with 0 */
 	regmap_field_write(i2s->field_fmt_sext, 0);
@@ -387,6 +388,10 @@ static int sun4i_i2s_hw_params(struct snd_pcm_substream *substream,
 	case 16:
 		width = DMA_SLAVE_BUSWIDTH_2_BYTES;
 		break;
+	case 24:
+	case 32:
+		width = DMA_SLAVE_BUSWIDTH_4_BYTES;
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -396,6 +401,14 @@ static int sun4i_i2s_hw_params(struct snd_pcm_substream *substream,
 	case 16:
 		sr = 0;
 		wss = 0;
+		break;
+	case 24:
+		sr = 2;
+		wss = 2;
+		break;
+	case 32:
+		sr = 4;
+		wss = 4;
 		break;
 
 	default:
@@ -584,6 +597,11 @@ static void sun4i_i2s_stop_capture(struct sun4i_i2s *i2s)
 
 static void sun4i_i2s_stop_playback(struct sun4i_i2s *i2s)
 {
+	/* Flush TX FIFO */
+	regmap_update_bits(i2s->regmap, SUN4I_I2S_FIFO_CTRL_REG,
+			   SUN4I_I2S_FIFO_CTRL_FLUSH_TX,
+			   SUN4I_I2S_FIFO_CTRL_FLUSH_TX);
+
 	/* Disable TX Block */
 	regmap_update_bits(i2s->regmap, SUN4I_I2S_CTRL_REG,
 			   SUN4I_I2S_CTRL_TX_EN,
@@ -702,14 +720,20 @@ static struct snd_soc_dai_driver sun4i_i2s_dai = {
 		.channels_min = 2,
 		.channels_max = 2,
 		.rates = SNDRV_PCM_RATE_8000_192000,
-		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+		.formats =
+        SNDRV_PCM_FMTBIT_S16_LE |
+        SNDRV_PCM_FMTBIT_S24_LE |
+        SNDRV_PCM_FMTBIT_S32_LE,
 	},
 	.playback = {
 		.stream_name = "Playback",
 		.channels_min = 2,
 		.channels_max = 2,
 		.rates = SNDRV_PCM_RATE_8000_192000,
-		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+		.formats =
+        SNDRV_PCM_FMTBIT_S16_LE |
+        SNDRV_PCM_FMTBIT_S24_LE |
+        SNDRV_PCM_FMTBIT_S32_LE,
 	},
 	.ops = &sun4i_i2s_dai_ops,
 	.symmetric_rates = 1,
